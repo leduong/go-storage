@@ -131,7 +131,9 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		uploadedPaths = append(uploadedPaths, filename)
+		// Remove "uploads/" prefix for response
+		relativePath := strings.TrimPrefix(filename, "uploads/")
+		uploadedPaths = append(uploadedPaths, relativePath)
 	}
 
 	responseJSON(w, Response{
