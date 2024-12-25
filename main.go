@@ -92,10 +92,11 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Determine file extension
-		ext := filepath.Ext(fileHeader.Filename)
+		ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
 		filename := filepath.Join(dirPath, newUUID[24:]+ext)
 
-		if strings.HasSuffix(strings.ToLower(ext), ".pdf") {
+		switch {
+		case ext == ".pdf":
 			// Save PDF
 			if err := savePDF(file, filename); err != nil {
 				responseJSON(w, Response{
@@ -104,7 +105,16 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 				}, http.StatusInternalServerError)
 				return
 			}
-		} else if isImage(fileHeader.Filename) {
+		case ext == ".epub", ext == ".docx", ext == ".xlsx":
+			// Save other document formats
+			if err := saveDocument(file, filename); err != nil {
+				responseJSON(w, Response{
+					Status:  "error",
+					Message: "Failed to save document",
+				}, http.StatusInternalServerError)
+				return
+			}
+		case isImage(fileHeader.Filename):
 			// Process and save image
 			if err := processAndSaveImage(file, filename); err != nil {
 				responseJSON(w, Response{
@@ -113,7 +123,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 				}, http.StatusInternalServerError)
 				return
 			}
-		} else {
+		default:
 			responseJSON(w, Response{
 				Status:  "error",
 				Message: "Unsupported file type",
@@ -129,6 +139,17 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 		Status:  "success",
 		Message: "ok",
 	}, http.StatusOK)
+}
+
+func saveDocument(file io.Reader, filename string) error {
+	dest, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer dest.Close()
+
+	_, err = io.Copy(dest, file)
+	return err
 }
 
 func savePDF(file io.Reader, filename string) error {
