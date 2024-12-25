@@ -31,6 +31,17 @@ func main() {
 }
 
 func uploadHandler(w http.ResponseWriter, r *http.Request) {
+	// Enable CORS
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	// Handle OPTIONS request for preflight
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	if r.Method != http.MethodPost {
 		responseJSON(w, Response{
 			Status:  "error",
@@ -71,8 +82,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 
 		// Generate UUID-based path
 		newUUID := uuid.New().String()
-		dirStructure := filepath.Join(newUUID[:8], newUUID[9:13], newUUID[14:18], newUUID[19:23])
-		dirPath := filepath.Join("uploads", dirStructure)
+		dirPath := filepath.Join("uploads", newUUID[:8], newUUID[9:13], newUUID[14:18], newUUID[19:23])
 		if err := os.MkdirAll(dirPath, os.ModePerm); err != nil {
 			responseJSON(w, Response{
 				Status:  "error",
