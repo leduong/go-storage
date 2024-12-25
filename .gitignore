@@ -1,4 +1,4 @@
-*.jpg
-*.jpeg
-*.png
-*.pdf
+uploads/*.jpg
+uploads/*.jpeg
+uploads/*.png
+uploads/*.pdf
