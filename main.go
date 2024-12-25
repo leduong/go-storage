@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"image"
 	"image/jpeg"
 	"io"
@@ -8,10 +9,17 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/nfnt/resize"
 )
+
+type Response struct {
+	Data    []string `json:"data,omitempty"`
+	Status  string   `json:"status"`
+	Message string   `json:"message"`
+}
 
 func main() {
 	http.HandleFunc("/upload", uploadHandler)
@@ -24,47 +32,93 @@ func main() {
 
 func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		responseJSON(w, Response{
+			Status:  "error",
+			Message: "Invalid request method",
+		}, http.StatusMethodNotAllowed)
 		return
 	}
 
-	file, header, err := r.FormFile("file")
+	err := r.ParseMultipartForm(10 << 20) // Limit file size to 10MB per file
 	if err != nil {
-		http.Error(w, "Unable to read file", http.StatusBadRequest)
-		return
-	}
-	defer file.Close()
-
-	// Generate a UUID for the file name
-	newUUID := uuid.New().String()
-	dirStructure := filepath.Join(newUUID[:8], newUUID[9:13], newUUID[14:18], newUUID[19:23])
-	dirPath := filepath.Join("uploads", dirStructure)
-	if err := os.MkdirAll(dirPath, os.ModePerm); err != nil {
-		http.Error(w, "Failed to create directories", http.StatusInternalServerError)
+		responseJSON(w, Response{
+			Status:  "error",
+			Message: "Failed to parse form",
+		}, http.StatusBadRequest)
 		return
 	}
 
-	filename := filepath.Join(dirPath, newUUID[24:]+filepath.Ext(header.Filename))
+	files := r.MultipartForm.File["files"]
+	if len(files) == 0 || len(files) > 12 {
+		responseJSON(w, Response{
+			Status:  "error",
+			Message: "Please upload between 1 and 12 files",
+		}, http.StatusBadRequest)
+		return
+	}
 
-	// Determine file type (image or PDF)
-	switch {
-	case header.Filename[len(header.Filename)-4:] == ".pdf":
-		if err := savePDF(file, filename); err != nil {
-			http.Error(w, "Failed to save PDF", http.StatusInternalServerError)
+	var uploadedPaths []string
+	for _, fileHeader := range files {
+		file, err := fileHeader.Open()
+		if err != nil {
+			responseJSON(w, Response{
+				Status:  "error",
+				Message: "Failed to open file",
+			}, http.StatusInternalServerError)
 			return
 		}
-	case isImage(header.Filename):
-		if err := processAndSaveImage(file, filename); err != nil {
-			http.Error(w, "Failed to process image", http.StatusInternalServerError)
+		defer file.Close()
+
+		// Generate UUID-based path
+		newUUID := uuid.New().String()
+		dirStructure := filepath.Join(newUUID[:8], newUUID[9:13], newUUID[14:18], newUUID[19:23])
+		dirPath := filepath.Join("uploads", dirStructure)
+		if err := os.MkdirAll(dirPath, os.ModePerm); err != nil {
+			responseJSON(w, Response{
+				Status:  "error",
+				Message: "Failed to create directories",
+			}, http.StatusInternalServerError)
 			return
 		}
-	default:
-		http.Error(w, "Unsupported file type", http.StatusBadRequest)
-		return
+
+		// Determine file extension
+		ext := filepath.Ext(fileHeader.Filename)
+		filename := filepath.Join(dirPath, newUUID[24:]+ext)
+
+		if strings.HasSuffix(strings.ToLower(ext), ".pdf") {
+			// Save PDF
+			if err := savePDF(file, filename); err != nil {
+				responseJSON(w, Response{
+					Status:  "error",
+					Message: "Failed to save PDF",
+				}, http.StatusInternalServerError)
+				return
+			}
+		} else if isImage(fileHeader.Filename) {
+			// Process and save image
+			if err := processAndSaveImage(file, filename); err != nil {
+				responseJSON(w, Response{
+					Status:  "error",
+					Message: "Failed to process image",
+				}, http.StatusInternalServerError)
+				return
+			}
+		} else {
+			responseJSON(w, Response{
+				Status:  "error",
+				Message: "Unsupported file type",
+			}, http.StatusBadRequest)
+			return
+		}
+
+		uploadedPaths = append(uploadedPaths, filename)
 	}
 
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("File uploaded successfully"))
+	responseJSON(w, Response{
+		Data:    uploadedPaths,
+		Status:  "success",
+		Message: "ok",
+	}, http.StatusOK)
 }
 
 func savePDF(file io.Reader, filename string) error {
@@ -79,7 +133,7 @@ func savePDF(file io.Reader, filename string) error {
 }
 
 func isImage(filename string) bool {
-	ext := filename[len(filename)-4:]
+	ext := strings.ToLower(filepath.Ext(filename))
 	return ext == ".jpg" || ext == ".png" || ext == ".jpeg"
 }
 
@@ -116,4 +170,10 @@ func resizeImage(img image.Image) image.Image {
 	}
 
 	return img
+}
+
+func responseJSON(w http.ResponseWriter, response Response, status int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(response)
 }
