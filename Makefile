@@ -9,3 +9,8 @@ pull:
 push:
 	git push --set-upstream origin main
 
+up:
+	docker compose up -d
+
+down:
+	docker compose down
