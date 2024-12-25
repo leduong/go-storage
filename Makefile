@@ -4,10 +4,10 @@ commit:
 	git commit -m "🍻 Updated at `date`"
 
 pull:
-	git pull origin main
+	git pull origin ebook
 
 push:
-	git push --set-upstream origin main
+	git push --set-upstream origin ebook
 
 up:
 	docker compose up -d
